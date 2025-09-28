@@ -10,7 +10,12 @@ const reviewsRoutes_1 = __importDefault(require("./routes/reviewsRoutes"));
 const errorHandler_1 = require("./middlewares/errorHandler");
 const app = (0, express_1.default)();
 const corsOptions = {
-    origin: ['http://localhost:4200', 'http://127.0.0.1:4200', 'https://www.gestionataxi.es'],
+    origin: [
+        'http://localhost:4200',
+        'http://127.0.0.1:4200',
+        'https://gestionataxi.es',
+        'https://www.gestionataxi.es'
+    ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 };
