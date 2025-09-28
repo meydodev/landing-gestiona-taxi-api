@@ -9,7 +9,12 @@ import { errorHandler } from './middlewares/errorHandler';
 const app = express();
 
 const corsOptions: cors.CorsOptions = {
-  origin: ['http://localhost:4200', 'http://127.0.0.1:4200', 'https://www.gestionataxi.es'],
+   origin: [
+    'http://localhost:4200',
+    'http://127.0.0.1:4200',
+    'https://gestionataxi.es',
+    'https://www.gestionataxi.es'
+  ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
