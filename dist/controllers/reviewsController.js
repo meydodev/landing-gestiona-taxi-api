@@ -1,52 +1,106 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getReviews = getReviews;
 exports.addReview = addReview;
 exports.getReviewsStats = getReviewsStats;
-const reviews_1 = require("../models/reviews");
-const reviews_2 = require("../models/reviews");
+const db_1 = __importDefault(require("../db/db"));
+// ✅ GET /api/reviews -> paginado
+// GET /api/reviews -> paginado
 async function getReviews(req, res, next) {
     try {
         const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10));
         const limit = Math.max(1, parseInt(String(req.query.limit ?? '9'), 10));
-        const all = await (0, reviews_1.listReviews)();
-        const total = all.length;
-        const start = (page - 1) * limit;
-        const items = all.slice(start, start + limit);
-        // respuesta paginada
-        res.json({
-            items,
-            page,
-            limit,
-            total,
-            hasMore: start + items.length < total,
+        const offset = (page - 1) * limit;
+        db_1.default.query('SELECT `id`, `rating`, `review` FROM `reviews` ORDER BY `created_at` DESC LIMIT ? OFFSET ?', [limit, offset], (err, items) => {
+            if (err)
+                return next(err);
+            db_1.default.query('SELECT COUNT(*) AS total FROM `reviews`', (cerr, crows) => {
+                if (cerr)
+                    return next(cerr);
+                const total = Number(crows[0].total);
+                res.json({
+                    items, // ⬅️ ya solo { id, rating, review }
+                    page,
+                    limit,
+                    total,
+                    hasMore: offset + items.length < total,
+                });
+            });
         });
     }
     catch (err) {
         next(err);
     }
 }
+// ✅ POST /api/reviews -> con transacción
 async function addReview(req, res, next) {
     try {
-        //console.log('[SERVER BODY]', req.body); // debe mostrar { rating: 5, review: '...' }
         const { rating, review } = req.body ?? {};
         if (typeof rating !== 'number' || rating < 1 || rating > 5)
-            return res.status(400).json({ message: 'rating 1..5' });
+            return res.status(400).json({ message: 'rating debe ser entre 1 y 5' });
         if (typeof review !== 'string' || review.trim().length < 3)
-            return res.status(400).json({ message: 'review ≥ 3 chars' });
-        const saved = await (0, reviews_1.createReviewTx)({ rating, review });
-        res.status(201).json(saved);
+            return res.status(400).json({ message: 'review debe tener al menos 3 caracteres' });
+        db_1.default.beginTransaction((err) => {
+            if (err)
+                return next(err);
+            db_1.default.query('INSERT INTO `reviews` (`rating`, `review`) VALUES (?, ?)', [rating, review], (insErr, insRes) => {
+                if (insErr)
+                    return db_1.default.rollback(() => next(insErr));
+                const newId = insRes.insertId;
+                db_1.default.query('SELECT `id`, `rating`, `review`, `created_at` FROM `reviews` WHERE `id` = ?', [newId], (selErr, rows) => {
+                    if (selErr)
+                        return db_1.default.rollback(() => next(selErr));
+                    db_1.default.commit((comErr) => {
+                        if (comErr)
+                            return db_1.default.rollback(() => next(comErr));
+                        res.status(201).json(rows[0]);
+                    });
+                });
+            });
+        });
     }
     catch (e) {
         next(e);
     }
 }
+// ✅ GET /api/reviews/stats
 async function getReviewsStats(_req, res, next) {
     try {
-        const stats = await (0, reviews_2.getReviewStats)();
-        res.json(stats);
+        const sql = `
+      SELECT 
+        AVG(rating)  AS average,
+        COUNT(*)     AS total,
+        SUM(rating = 5) AS stars5,
+        SUM(rating = 4) AS stars4,
+        SUM(rating = 3) AS stars3,
+        SUM(rating = 2) AS stars2,
+        SUM(rating = 1) AS stars1
+      FROM reviews
+    `;
+        db_1.default.query(sql, (err, rows) => {
+            if (err)
+                return next(err);
+            const row = rows[0] || {};
+            // Normaliza a número (evita null/undefined)
+            const average = row.average != null ? Number(row.average) : 0;
+            const total = row.total != null ? Number(row.total) : 0;
+            res.json({
+                average,
+                total,
+                breakdown: {
+                    5: Number(row.stars5 || 0),
+                    4: Number(row.stars4 || 0),
+                    3: Number(row.stars3 || 0),
+                    2: Number(row.stars2 || 0),
+                    1: Number(row.stars1 || 0),
+                },
+            });
+        });
     }
-    catch (err) {
-        next(err);
+    catch (e) {
+        next(e);
     }
 }
