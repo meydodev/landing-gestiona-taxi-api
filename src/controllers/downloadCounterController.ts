@@ -17,7 +17,7 @@ export const getDownloadCounters = async (
     // Lectura normal dentro de la transacción (snapshot consistente).
     const sql = `
       SELECT counter AS counterDownload, updatedAt
-      FROM counter_dowload
+      FROM counter_download
       WHERE id = 1
     `;
 
@@ -59,41 +59,41 @@ export const addDownload = async (
 ) => {
   connection.beginTransaction((err) => {
     if (err) {
-      console.error("❌ Error iniciando transacción:", err);
+      //console.error("❌ Error iniciando transacción:", err);
       return next(err);
     }
 
-    const sql = `
-      INSERT INTO counter_dowload (id, counter, updatedAt)
-      VALUES (1, 1, NOW())
-      ON DUPLICATE KEY UPDATE counter = counter + 1, updatedAt = NOW()
-    `;
+    // ⬅️ solo incrementa
+    connection.query(
+      'UPDATE counter_download SET counter = counter + 1, updatedAt = NOW() WHERE id = 1',
+      (updateErr) => {
+        if (updateErr) {
+          //console.error("❌ Error en UPDATE:", updateErr);
+          return connection.rollback(() => next(updateErr));
+        }
 
-    connection.query(sql, (insertErr) => {
-      if (insertErr) {
-        console.error("❌ Error en INSERT/UPDATE:", insertErr);
-        return connection.rollback(() => next(insertErr));
-      }
-
-      connection.query(
-        'SELECT counter AS counterDownload, updatedAt FROM counter_dowload WHERE id = 1',
-        (selectErr, results: RowDataPacket[]) => {
-          if (selectErr) {
-            console.error("❌ Error en SELECT:", selectErr);
-            return connection.rollback(() => next(selectErr));
-          }
-
-          connection.commit((commitErr) => {
-            if (commitErr) {
-              console.error("❌ Error al hacer commit:", commitErr);
-              return connection.rollback(() => next(commitErr));
+        // ⬅️ luego selecciona el valor actualizado
+        connection.query(
+          'SELECT counter AS counterDownload, updatedAt FROM counter_download WHERE id = 1',
+          (selectErr, results: RowDataPacket[]) => {
+            if (selectErr) {
+              //console.error("❌ Error en SELECT:", selectErr);
+              return connection.rollback(() => next(selectErr));
             }
 
-            res.status(201).json(results[0]); // { counterDownload, updatedAt }
-          });
-        }
-      );
-    });
+            connection.commit((commitErr) => {
+              if (commitErr) {
+                //console.error("❌ Error al hacer commit:", commitErr);
+                return connection.rollback(() => next(commitErr));
+              }
+
+              //console.log("✅ Contador actualizado:", results[0]);
+              res.status(200).json(results[0]);
+            });
+          }
+        );
+      }
+    );
   });
 };
 

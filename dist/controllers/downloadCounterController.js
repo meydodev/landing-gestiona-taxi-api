@@ -15,7 +15,7 @@ const getDownloadCounters = async (_req, res, next) => {
         // Lectura normal dentro de la transacción (snapshot consistente).
         const sql = `
       SELECT counter AS counterDownload, updatedAt
-      FROM counter_dowload
+      FROM counter_download
       WHERE id = 1
     `;
         db_1.default.query(sql, (err, results) => {
@@ -49,30 +49,28 @@ exports.getDownloadCounters = getDownloadCounters;
 const addDownload = async (_req, res, next) => {
     db_1.default.beginTransaction((err) => {
         if (err) {
-            console.error("❌ Error iniciando transacción:", err);
+            //console.error("❌ Error iniciando transacción:", err);
             return next(err);
         }
-        const sql = `
-      INSERT INTO counter_dowload (id, counter, updatedAt)
-      VALUES (1, 1, NOW())
-      ON DUPLICATE KEY UPDATE counter = counter + 1, updatedAt = NOW()
-    `;
-        db_1.default.query(sql, (insertErr) => {
-            if (insertErr) {
-                console.error("❌ Error en INSERT/UPDATE:", insertErr);
-                return db_1.default.rollback(() => next(insertErr));
+        // ⬅️ solo incrementa
+        db_1.default.query('UPDATE counter_download SET counter = counter + 1, updatedAt = NOW() WHERE id = 1', (updateErr) => {
+            if (updateErr) {
+                //console.error("❌ Error en UPDATE:", updateErr);
+                return db_1.default.rollback(() => next(updateErr));
             }
-            db_1.default.query('SELECT counter AS counterDownload, updatedAt FROM counter_dowload WHERE id = 1', (selectErr, results) => {
+            // ⬅️ luego selecciona el valor actualizado
+            db_1.default.query('SELECT counter AS counterDownload, updatedAt FROM counter_download WHERE id = 1', (selectErr, results) => {
                 if (selectErr) {
-                    console.error("❌ Error en SELECT:", selectErr);
+                    //console.error("❌ Error en SELECT:", selectErr);
                     return db_1.default.rollback(() => next(selectErr));
                 }
                 db_1.default.commit((commitErr) => {
                     if (commitErr) {
-                        console.error("❌ Error al hacer commit:", commitErr);
+                        //console.error("❌ Error al hacer commit:", commitErr);
                         return db_1.default.rollback(() => next(commitErr));
                     }
-                    res.status(201).json(results[0]); // { counterDownload, updatedAt }
+                    //console.log("✅ Contador actualizado:", results[0]);
+                    res.status(200).json(results[0]);
                 });
             });
         });
