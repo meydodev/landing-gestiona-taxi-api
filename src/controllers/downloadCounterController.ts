@@ -1,99 +1,58 @@
-import { Request, Response, NextFunction } from 'express';
-import connection from '../db/db';
-import { RowDataPacket } from 'mysql2';
+import { Request, Response, NextFunction } from "express";
+import pool from "../db/db";
+import { RowDataPacket, ResultSetHeader } from "mysql2";
 
-// GET /api/downloads -> { counterDownload, updatedAt }
+// GET
 export const getDownloadCounters = async (
   _req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  connection.beginTransaction((txErr) => {
-    if (txErr) {
-      //console.error('❌ Error iniciando transacción:', txErr);
-      return next(txErr);
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT counter AS counterDownload, updatedAt FROM counter_download WHERE id = 1"
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ message: "No counter found" });
     }
 
-    // Lectura normal dentro de la transacción (snapshot consistente).
-    const sql = `
-      SELECT counter AS counterDownload, updatedAt
-      FROM counter_download
-      WHERE id = 1
-    `;
-
-    connection.query(sql, (err, results: RowDataPacket[]) => {
-      if (err) {
-        //console.error('❌ Error en SELECT:', err);
-        return connection.rollback(() => next(err));
-      }
-
-      if (!results || results.length === 0) {
-        // No hay fila; confirma para cerrar la transacción igualmente
-        return connection.commit((commitErr) => {
-          if (commitErr) {
-            //console.error('❌ Error al hacer commit:', commitErr);
-            return connection.rollback(() => next(commitErr));
-          }
-          return res.status(404).json({ message: 'No counter found' });
-        });
-      }
-
-      connection.commit((commitErr) => {
-        if (commitErr) {
-          //console.error('❌ Error al hacer commit:', commitErr);
-          return connection.rollback(() => next(commitErr));
-        }
-
-        // Devuelve { counterDownload, updatedAt }
-        return res.json(results[0]);
-      });
-    });
-  });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
 };
 
-// POST /api/downloads -> incrementa en 1 (transaccional)
+// POST
 export const addDownload = async (
   _req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  connection.beginTransaction((err) => {
-    if (err) {
-      //console.error("❌ Error iniciando transacción:", err);
-      return next(err);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [updateResult] = await connection.query<ResultSetHeader>(
+      "UPDATE counter_download SET counter = counter + 1, updatedAt = NOW() WHERE id = 1"
+    );
+
+    if (updateResult.affectedRows === 0) {
+      await connection.query<ResultSetHeader>(
+        "INSERT INTO counter_download (id, counter, createdAt, updatedAt) VALUES (1, 1, NOW(), NOW())"
+      );
     }
 
-    // ⬅️ solo incrementa
-    connection.query(
-      'UPDATE counter_download SET counter = counter + 1, updatedAt = NOW() WHERE id = 1',
-      (updateErr) => {
-        if (updateErr) {
-          //console.error("❌ Error en UPDATE:", updateErr);
-          return connection.rollback(() => next(updateErr));
-        }
-
-        // ⬅️ luego selecciona el valor actualizado
-        connection.query(
-          'SELECT counter AS counterDownload, updatedAt FROM counter_download WHERE id = 1',
-          (selectErr, results: RowDataPacket[]) => {
-            if (selectErr) {
-              //console.error("❌ Error en SELECT:", selectErr);
-              return connection.rollback(() => next(selectErr));
-            }
-
-            connection.commit((commitErr) => {
-              if (commitErr) {
-                //console.error("❌ Error al hacer commit:", commitErr);
-                return connection.rollback(() => next(commitErr));
-              }
-
-              //console.log("✅ Contador actualizado:", results[0]);
-              res.status(200).json(results[0]);
-            });
-          }
-        );
-      }
+    const [rows] = await connection.query<RowDataPacket[]>(
+      "SELECT counter AS counterDownload, updatedAt FROM counter_download WHERE id = 1"
     );
-  });
-};
 
+    await connection.commit();
+    res.status(200).json(rows[0]);
+  } catch (err) {
+    await connection.rollback();
+    next(err);
+  } finally {
+    connection.release();
+  }
+};
